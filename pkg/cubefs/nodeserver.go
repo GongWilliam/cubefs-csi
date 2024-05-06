@@ -102,7 +102,7 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 }
 
 func (ns *nodeServer) mount(targetPath, volumeName string, param map[string]string) (retErr error) {
-	defer func(){
+	defer func() {
 		if retErr != nil {
 			glog.Errorf("volume mount failed, remove the targetPath: %v, error: %v", targetPath, retErr.Error())
 			if err := os.Remove(targetPath); err != nil {
@@ -119,28 +119,28 @@ func (ns *nodeServer) mount(targetPath, volumeName string, param map[string]stri
 
 	if err := mount.CleanupMountPoint(targetPath, ns.mounter, false); err != nil {
 		retErr = status.Errorf(codes.Internal, "CleanupMountPoint fail, stagingTargetPath: %v error: %v", targetPath, err)
-		return 
+		return
 	}
 
 	if err := createMountPoint(targetPath); err != nil {
 		retErr = status.Errorf(codes.Internal, "createMountPoint fail, stagingTargetPath: %v error: %v", targetPath, err)
-		return 
+		return
 	}
 
 	cfsServer, err := newCfsServer(volumeName, param)
 	if err != nil {
 		retErr = status.Errorf(codes.InvalidArgument, "new cfs server failed: %v", err)
-		return 
+		return
 	}
 
 	if err := cfsServer.persistClientConf(targetPath); err != nil {
 		retErr = status.Errorf(codes.Internal, "persist client config file failed: %v", err)
-		return 
+		return
 	}
 
 	if err := cfsServer.runClient(); err != nil {
 		retErr = status.Errorf(codes.Internal, "mount failed: %v", err)
-		return 
+		return
 	}
 
 	return
@@ -261,7 +261,7 @@ func nodeGetVolumeStats(_ context.Context, volumePath string) (*csi.NodeGetVolum
 
 // getAttachedPVOnNode finds all persistent volume objects attached in the node and controlled by me.
 func (ns *nodeServer) getAttachedPVOnNode(nodeName string) ([]*v1.PersistentVolume, error) {
-	vaList, err := ns.Driver.ClientSet.StorageV1().VolumeAttachments().List(context.Background(), metav1.ListOptions{})
+	vaList, err := ns.Driver.K8sClient.StorageV1().VolumeAttachments().List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("unable to list VolumeAttachments: %v", err)
 	}
@@ -276,7 +276,7 @@ func (ns *nodeServer) getAttachedPVOnNode(nodeName string) ([]*v1.PersistentVolu
 		}
 	}
 
-	pvList, err := ns.Driver.ClientSet.CoreV1().PersistentVolumes().List(context.Background(), metav1.ListOptions{})
+	pvList, err := ns.Driver.K8sClient.CoreV1().PersistentVolumes().List(context.Background(), metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("unable to list PersistentVolumes: %v", err)
 	}
@@ -326,7 +326,7 @@ func (ns *nodeServer) getAttachedPVWithPodsOnNode(nodeName string) ([]*persisten
 		}
 	}
 
-	allPodsOnNode, err := ns.Driver.ClientSet.CoreV1().Pods("").List(context.Background(), metav1.ListOptions{
+	allPodsOnNode, err := ns.Driver.K8sClient.CoreV1().Pods("").List(context.Background(), metav1.ListOptions{
 		FieldSelector: "spec.nodeName=" + nodeName,
 	})
 	if err != nil {

@@ -16,10 +16,13 @@ package cubefs
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/cubefs/cubefs-csi/pkg/csi-common"
+	csicommon "github.com/cubefs/cubefs-csi/pkg/csi-common"
 	"github.com/golang/glog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -97,6 +100,23 @@ func initClientSet(kubeconfig string) (*kubernetes.Clientset, error) {
 		return nil, err
 	}
 
+	config.Timeout = 10 * time.Second
+
+	if os.Getenv("KUBE_QPS") != "" {
+		kubeQpsInt, err := strconv.Atoi(os.Getenv("KUBE_QPS"))
+		if err != nil {
+			return nil, err
+		}
+		config.QPS = float32(kubeQpsInt)
+	}
+	if os.Getenv("KUBE_BURST") != "" {
+		kubeBurstInt, err := strconv.Atoi(os.Getenv("KUBE_BURST"))
+		if err != nil {
+			return nil, err
+		}
+		config.Burst = kubeBurstInt
+	}
+
 	return kubernetes.NewForConfig(config)
 }
 
@@ -126,12 +146,42 @@ func (d *driver) Run(endpoint string) {
 	if nodeName := os.Getenv("KUBE_NODE_NAME"); d.RemountDamaged && nodeName != "" {
 		nodeServer.remountDamagedVolumes(nodeName)
 	}
-
+	// // test, need to remove this
+	// err := nodeServer.ProduceClientPod(context.Background(), "pvc-62b19a73-8f6f-4545-bf6e-c6ad929c8a0c")
+	// if err != nil {
+	// 	log.Printf("create client pod failed: %v", err.Error())
+	// }
 	csicommon.RunControllerandNodePublishServer(endpoint, NewIdentityServer(d), NewControllerServer(d), NewNodeServer(d))
 }
 
+func (d *driver) RunClient(mountpoint, pvName string) error {
+	nodeServer := NewNodeServer(d)
+	volInfos, err := nodeServer.GetPodResourceInfo(context.Background(), pvName)
+	if err != nil {
+		log.Printf("get volume info failed: %v", err.Error())
+		return fmt.Errorf("get volume info failed: %v", err.Error())
+	}
+
+	cfsServer, err := newCfsServer(pvName, volInfos)
+	if err != nil {
+		log.Printf("new cfs server failed: %v", err.Error())
+		return fmt.Errorf("new cfs server failed: %v", err.Error())
+	}
+
+	if err := cfsServer.persistClientConf(mountpoint); err != nil {
+		log.Printf("persist client config file failed: %v", err.Error())
+		return fmt.Errorf("persist client config file failed: %v", err.Error())
+	}
+
+	if err := cfsServer.runClient(); err != nil {
+		log.Printf("mount failed: %v", err.Error())
+		return fmt.Errorf("mount failed: %v", err.Error())
+	}
+	return nil
+}
+
 func (d *driver) queryPersistentVolumes(ctx context.Context, pvName string) (*v1.PersistentVolume, error) {
-	persistentVolume, err := d.CSIDriver.ClientSet.CoreV1().PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{})
+	persistentVolume, err := d.CSIDriver.K8sClient.CoreV1().PersistentVolumes().Get(ctx, pvName, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}

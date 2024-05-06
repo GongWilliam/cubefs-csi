@@ -18,6 +18,7 @@ package csicommon
 
 import (
 	"fmt"
+
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/golang/glog"
@@ -31,7 +32,7 @@ type CSIDriver struct {
 	Name      string
 	NodeID    string
 	Version   string
-	ClientSet *kubernetes.Clientset
+	K8sClient *kubernetes.Clientset
 
 	cap []*csi.ControllerServiceCapability
 	vc  []*csi.VolumeCapability_AccessMode
@@ -59,7 +60,7 @@ func NewCSIDriver(name string, v string, nodeID string, clientSet *kubernetes.Cl
 		Name:      name,
 		Version:   v,
 		NodeID:    nodeID,
-		ClientSet: clientSet,
+		K8sClient: clientSet,
 	}
 
 	return &driver
